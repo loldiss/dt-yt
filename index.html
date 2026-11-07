@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DT YouTube Embed</title>
+<style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #000; }
+    #player { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="player"></div>
+<script>
+/* Trang trung gian chạy trên https (GitHub Pages) để YouTube chấp nhận nhúng.
+ * Dùng: index.html?v=VIDEO_ID  — được điều khiển từ dt-loadingscreen qua postMessage. */
+(function () {
+    'use strict';
+    var id = new URLSearchParams(location.search).get('v') || '';
+    var player = null, ready = false;
+
+    function send(event, extra) {
+        try { parent.postMessage(Object.assign({ type: 'dt-yt-event', event: event }, extra || {}), '*'); } catch (e) {}
+    }
+
+    if (!/^[\w-]{11}$/.test(id)) { send('error', { code: 'bad-id' }); return; }
+
+    window.onYouTubeIframeAPIReady = function () {
+        player = new YT.Player('player', {
+            width: '100%', height: '100%', videoId: id,
+            playerVars: {
+                autoplay: 1, mute: 1, controls: 0, disablekb: 1, fs: 0, rel: 0,
+                iv_load_policy: 3, modestbranding: 1, playsinline: 1, cc_load_policy: 0,
+                loop: 1, playlist: id, origin: location.origin
+            },
+            events: {
+                onReady: function (e) { ready = true; e.target.mute(); e.target.playVideo(); send('ready'); },
+                onStateChange: function (e) {
+                    var S = YT.PlayerState;
+                    if (e.data === S.PLAYING) send('playing');
+                    else if (e.data === S.ENDED) { e.target.seekTo(0); e.target.playVideo(); }
+                    else if (e.data === S.PAUSED || e.data === S.CUED || e.data === -1) e.target.playVideo();
+                },
+                onError: function (e) { send('error', { code: e.data }); }
+            }
+        });
+    };
+
+    var s = document.createElement('script');
+    s.src = 'https://www.youtube.com/iframe_api';
+    s.onerror = function () { send('error', { code: 'api-load' }); };
+    document.head.appendChild(s);
+
+    window.addEventListener('message', function (e) {
+        var d = e.data;
+        if (e.source !== parent || !d || d.type !== 'dt-yt' || !ready) return;
+        try {
+            switch (d.cmd) {
+                case 'mute':   player.mute(); send('sound', { muted: true }); break;
+                case 'unmute': player.unMute(); send('sound', { muted: player.isMuted() }); break;
+                case 'volume': player.setVolume(Math.max(0, Math.min(100, Number(d.value) || 0))); break;
+                case 'play':   player.playVideo(); break;
+            }
+        } catch (err) {}
+    });
+})();
+</script>
+</body>
+</html>
